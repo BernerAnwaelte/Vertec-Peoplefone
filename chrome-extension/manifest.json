@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Vertec → peoplefone Wählhilfe",
+  "description": "Nimmt Anrufwünsche aus Vertec entgegen, öffnet bei Bedarf das peoplefone SOFTPHONE in Chrome und wählt die Nummer.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "102",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "webNavigation",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://softphone.peoplefone.com/*",
+    "https://softphone-rc.peoplefone.com/*",
+    "https://webrtc.peoplefone.ch/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://softphone.peoplefone.com/*",
+        "https://softphone-rc.peoplefone.com/*",
+        "https://webrtc.peoplefone.ch/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "Vertec → peoplefone Wählhilfe (Klick: Einstellungen)",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png"
+    }
+  }
+}

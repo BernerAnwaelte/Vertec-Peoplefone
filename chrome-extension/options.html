@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Vertec → peoplefone Wählhilfe – Einstellungen</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.3rem; }
+    label { display: block; margin-top: 1.1rem; font-weight: 600; }
+    small { display: block; color: #555; font-weight: normal; margin-top: .2rem; }
+    input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: .45rem; font: inherit; }
+    textarea { height: 4.5rem; }
+    .row { display: flex; gap: .5rem; }
+    .row input { flex: 1; }
+    button { margin-top: 1.4rem; padding: .5rem 1.2rem; font: inherit; cursor: pointer; }
+    #status { margin-left: 1rem; color: #0a7a2f; }
+    code { background: #f2f2f2; padding: 0 .25rem; }
+  </style>
+</head>
+<body>
+  <h1>Vertec → peoplefone Wählhilfe</h1>
+
+  <label for="token">Geheimer Token
+    <small>Muss identisch sein mit <code>TOKEN</code> im Vertec-Skript bzw. <code>Token</code> in der
+      Windows-Konfiguration. Verhindert, dass fremde Webseiten über präparierte Links Anrufe auslösen.</small>
+  </label>
+  <div class="row">
+    <input id="token" type="text" autocomplete="off" spellcheck="false">
+    <button id="gen" type="button" style="margin-top:0">Neu erzeugen</button>
+  </div>
+
+  <label for="countryCode">Landesvorwahl (ohne 00 / +)
+    <small>Für nationale Nummern wie 031 123 45 67 → +41 31 123 45 67.</small>
+  </label>
+  <input id="countryCode" type="text">
+
+  <label for="delayMs">Wartezeit nach dem Öffnen des Softphones (Millisekunden)
+    <small>Nur relevant, wenn das Softphone noch nicht offen war. Das Softphone braucht nach dem Laden
+      einen Moment, bis es angemeldet ist. Bei Bedarf erhöhen.</small>
+  </label>
+  <input id="delayMs" type="number" min="0" step="500">
+
+  <label><input id="confirmBeforeDial" type="checkbox"> Vor dem Wählen nachfragen</label>
+
+  <label for="blockedPrefixes">Gesperrte Nummern-Präfixe (eines pro Zeile, internationales Format)</label>
+  <textarea id="blockedPrefixes" spellcheck="false"></textarea>
+
+  <label for="softphoneUrl">Softphone-Adresse
+    <small>Standard: https://softphone.peoplefone.com/</small>
+  </label>
+  <input id="softphoneUrl" type="text" spellcheck="false">
+
+  <button id="save" type="button">Speichern</button><span id="status"></span>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
