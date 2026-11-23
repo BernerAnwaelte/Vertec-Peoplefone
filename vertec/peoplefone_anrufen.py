@@ -1,55 +1,44 @@
 # -*- coding: utf-8 -*-
 """
-Vertec-Skript "Mit peoplefone anrufen"
+Vertec-Skript "Mit peoplefone anrufen"  (Menüeintrag)
 
-Registrierung in Vertec (Administratorrechte nötig):
+Registrierung (Administratorrechte nötig), siehe README:
   Einstellungen > Reports & Scripts > Scripts > Rechtsklick > Neu > Script
-    - Bezeichnung:            Mit peoplefone anrufen
-    - In Vertec-Menüs anzeigen: [x]
-    - Plattform:              Python 3
-    - Klassen:                siehe README (Adressklassen und/oder Kommunikationsmittel)
-    - Anzeigebedingung:       self->size = 1
-    - Skripttext:             Inhalt dieser Datei
+    Bezeichnung:               Mit peoplefone anrufen
+    In Vertec-Menüs anzeigen:  [x]
+    Plattform:                 Python 3
+    Klassen:                   Adressklassen (und ggf. Kommunikationsmittel)
+    Anzeigebedingung:          self->size = 1
+    Erweiterte Berechtigungen: [x]   (nur nötig, falls Benutzer den eigenen Benutzereintrag
+                                      nicht ändern dürfen; siehe schreibe_key)
+    Skripttext:                Inhalt dieser Datei
 
-Funktionsweise:
-  Das Skript ermittelt die Telefonnummer(n) des gewählten Objekts, bringt sie ins
-  internationale Format (+41...) und öffnet auf dem Client
-      https://softphone.peoplefone.com/#vertec-dial=<nummer>&k=<token>
-  Die Chrome-Erweiterung "Vertec -> peoplefone Wählhilfe" übernimmt den Rest
-  (Softphone öffnen bzw. vorhandenen Tab nutzen und wählen).
+Ablauf:
+  1. Nummer(n) des gewählten Eintrags ermitteln, ggf. Auswahl anzeigen.
+  2. Nummer ins internationale Format bringen (+41...).
+  3. Wählauftrag als Key "pf_dial" auf dem angemeldeten Benutzer speichern.
+  4. Die Chrome-Erweiterung auf dem lokalen PC holt den Auftrag über den
+     Vertec-Webservice (peoplefone_webservice.py) ab und wählt.
+
+Beim ersten Aufruf wird ein persönlicher Kopplungscode erzeugt und angezeigt. Er
+muss einmalig in den Einstellungen der Chrome-Erweiterung eingetragen werden.
 
 Verwendete, in der Vertec Knowledge Base dokumentierte Funktionen:
-  vtcapp.executeurl, vtcapp.executefile, vtcapp.msgbox, vtcapp.inputbox,
-  OCL "kommMittel", Attribut "zieladresse", Variable "selectedobjects".
+  vtcapp.currentlogin, vtcapp.updatedatabase, vtcapp.SystemContext, vtcapp.msgbox, vtcapp.inputbox,
+  setkeyvalue / getkeystring (Keys auf Benutzereinträgen), setmemberoutofdate,
+  objid, OCL "kommMittel", Attribut "zieladresse", Variable "selectedobjects".
 """
 
 import re
-
-try:  # Python 3
-    from urllib.parse import quote
-except ImportError:  # pragma: no cover - Python 2 (Vertec-Kompatibilitätsmodus)
-    from urllib import quote
+import time
+import uuid
 
 # ===================== Konfiguration =====================
-# Muss identisch sein mit dem Token in den Einstellungen der Chrome-Erweiterung.
-TOKEN = "HIER-DEN-TOKEN-AUS-DER-CHROME-ERWEITERUNG-EINTRAGEN"
-
-# Landesvorwahl für nationale Nummern (031 ... -> +4131 ...)
-LANDESVORWAHL = "41"
-
-# Adresse des peoplefone SOFTPHONE
-SOFTPHONE_URL = "https://softphone.peoplefone.com/"
-
-# Leer lassen  -> URL wird mit vtcapp.executeurl im Standardbrowser geöffnet
-#                 (Chrome muss dann der Standardbrowser sein).
-# Pfad angeben -> Chrome wird direkt gestartet (vtcapp.executefile), z.B.
-#   r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-#   Beim ersten Mal fragt Vertec, ob die Datei ausgeführt werden darf.
-CHROME_PFAD = ""
+LANDESVORWAHL = "41"   # für nationale Nummern: 031 ... -> +4131 ...
 # =========================================================
 
-DIAL_PARAM = "vertec-dial"
-TOKEN_PARAM = "k"
+KEY_AUFTRAG = "pf_dial"   # muss mit peoplefone_webservice.py übereinstimmen
+KEY_CODE = "pf_code"      # muss mit peoplefone_webservice.py übereinstimmen
 
 
 def normalisiere_nummer(roh, landesvorwahl=LANDESVORWAHL):
@@ -91,11 +80,40 @@ def sieht_wie_telefonnummer_aus(text):
     return len(re.sub(r"[^\d]", "", t)) >= 3
 
 
-def baue_url(nummer, token=TOKEN, basis=SOFTPHONE_URL):
-    """Gleiches Format wie buildDialUrl() in chrome-extension/lib/phone.js."""
-    return "{0}#{1}={2}&{3}={4}".format(
-        basis, DIAL_PARAM, quote(nummer, safe=""), TOKEN_PARAM, quote(token, safe="")
-    )
+def baue_auftrag(nummer, jetzt=None, auftrag_id=None):
+    """Format des Keys: "<id>|<unix-zeit>|<nummer>" (wird vom Webservice gelesen)."""
+    if jetzt is None:
+        jetzt = time.time()
+    if auftrag_id is None:
+        auftrag_id = uuid.uuid4().hex[:16]
+    return "{0}|{1}|{2}".format(auftrag_id, int(jetzt), nummer)
+
+
+def schreibe_key(benutzer, key, wert, vtcapp):
+    """
+    Schreibt einen Key auf den Benutzer und speichert.
+    Zuerst mit den normalen Rechten des Benutzers; falls das nicht erlaubt ist, im
+    SystemContext (dafür muss beim Script "Erweiterte Berechtigungen" aktiviert sein).
+    Wichtig (Vertec KB): innerhalb des SystemContext keine Dialoge anzeigen.
+    """
+    try:
+        benutzer.setkeyvalue(key, wert)
+        vtcapp.updatedatabase()
+        return
+    except Exception:
+        pass
+    with vtcapp.SystemContext():
+        benutzer.setkeyvalue(key, wert)
+        vtcapp.updatedatabase()
+
+
+def neuer_code():
+    return uuid.uuid4().hex
+
+
+def kopplungscode(benutzer):
+    """Code, der in der Chrome-Erweiterung eingetragen wird: "<objid>-<geheimnis>"."""
+    return "{0}-{1}".format(benutzer.objid, benutzer.getkeystring(KEY_CODE))
 
 
 def _attr(obj, name):
@@ -164,22 +182,35 @@ def waehle_nummer(nummern, vtcapp):
     return None
 
 
-def oeffne_url(url, vtcapp):
-    if CHROME_PFAD:
-        vtcapp.executefile(CHROME_PFAD, '"{0}"'.format(url))
-    else:
-        vtcapp.executeurl(url)
+def stelle_kopplung_sicher(benutzer, vtcapp):
+    """Erzeugt beim ersten Mal einen Kopplungscode und zeigt ihn an. True, wenn schon gekoppelt."""
+    try:
+        benutzer.setmemberoutofdate("keys")
+    except Exception:
+        pass
+    if benutzer.getkeystring(KEY_CODE):
+        return True
+    schreibe_key(benutzer, KEY_CODE, neuer_code(), vtcapp)
+    vtcapp.inputbox(
+        "peoplefone einrichten",
+        "Einmalige Einrichtung: Bitte diesen persönlichen Kopplungscode kopieren und in "
+        "Chrome in den Einstellungen der Erweiterung 'Vertec -> peoplefone Wählhilfe' "
+        "unter 'Kopplungscode' einfügen. Danach erneut 'Mit peoplefone anrufen' wählen.",
+        kopplungscode(benutzer),
+    )
+    return False
 
 
 def main(objekte):
     import vtcapp
 
-    if not TOKEN or TOKEN.startswith("HIER-"):
-        vtcapp.msgbox("Bitte zuerst den TOKEN im Skript 'Mit peoplefone anrufen' eintragen.")
-        return
     objekte = list(objekte or [])
     if len(objekte) != 1:
         vtcapp.msgbox("Bitte genau einen Eintrag auswählen.")
+        return
+
+    benutzer = vtcapp.currentlogin()
+    if not stelle_kopplung_sicher(benutzer, vtcapp):
         return
 
     nummern = nummern_von_objekt(objekte[0])
@@ -195,7 +226,7 @@ def main(objekte):
         vtcapp.msgbox("Die Nummer '{0}' konnte nicht erkannt werden.".format(roh))
         return
 
-    oeffne_url(baue_url(nummer, TOKEN, SOFTPHONE_URL), vtcapp)
+    schreibe_key(benutzer, KEY_AUFTRAG, baue_auftrag(nummer), vtcapp)
 
 
 # Einstieg, wenn Vertec das Skript ausführt.

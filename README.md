@@ -1,158 +1,168 @@
 # Vertec → peoplefone Wählhilfe
 
-Klick auf **Anrufen** in Vertec → Google Chrome öffnet das **peoplefone SOFTPHONE** (oder nimmt den bereits
-offenen Tab) → die Nummer wird gewählt.
+In Vertec (läuft im **RDS-Desktop**) auf **„Mit peoplefone anrufen“** klicken → auf dem **lokalen PC** öffnet
+Google Chrome das **peoplefone SOFTPHONE** (oder nimmt den bereits offenen Tab) und wählt die Nummer.
 
 ```
-Vertec (Desktop-/Cloud-App im DaaS-Desktop)
-   │  Weg A: eigener Menüeintrag "Mit peoplefone anrufen" (Vertec-Python-Skript, vtcapp.executeurl)
-   │  Weg B: Standardbefehl "Anrufen" → tel:+41… → Windows-tel:-Handler (PowerShell)
-   ▼
-https://softphone.peoplefone.com/#vertec-dial=%2B41311234567&k=<Token>   (in Chrome)
-   ▼
-Chrome-Erweiterung "Vertec → peoplefone Wählhilfe"
-   ├─ prüft Token, Nummer, Sperrliste (0900/0901/0906)
-   ├─ Softphone schon offen?  ja → neuen Tab schliessen, Softphone-Tab nach vorne holen
-   │                          nein → Softphone in diesem Tab laden (ggf. Login), kurz warten
-   └─ übergibt die Nummer an das Softphone: postMessage({type:'CLICK_TO_CALL', tel:'+41…'})
+RDS-Desktop                         Vertec Cloud Server                      Lokaler PC (Chrome)
+──────────────                      ───────────────────                      ───────────────────
+Vertec: "Mit peoplefone anrufen"
+  └─ speichert Wählauftrag ───────► Key "pf_dial" am Benutzer
+                                    Webservice "peoplefone"  ◄── fragt alle 2 s ── Chrome-Erweiterung
+                                      liefert Auftrag nur bei                      ├─ Softphone-Tab suchen
+                                      gültigem Kopplungscode   ── Nummer ───────►  │  oder öffnen
+                                                                                   └─ Nummer ans Softphone
 ```
+
+Die Telefonnummern verlassen dabei **Ihre bestehende Vertec-Umgebung nicht** – es gibt keinen zusätzlichen
+Server und keinen Drittanbieter (wichtig wegen Berufsgeheimnis, Art. 321 StGB, und DSG).
 
 ## Inhalt
 
-| Ordner | Zweck |
+| Datei | Zweck |
 |---|---|
-| `chrome-extension/` | Chrome-Erweiterung (Manifest V3), die den Wählauftrag ans Softphone übergibt |
-| `vertec/peoplefone_anrufen.py` | Vertec-Skript als Menüeintrag „Mit peoplefone anrufen“ (die Zusatzfunktion in Vertec) |
-| `windows/` | Optionaler `tel:`-Handler, damit auch der eingebaute Vertec-Befehl „Anrufen“ funktioniert |
-| `tests/` | Unit-Tests (JS + Python) und ein End-to-End-Test der Erweiterung in Chromium |
+| `vertec/peoplefone_anrufen.py` | Menüeintrag „Mit peoplefone anrufen“ – legt den Wählauftrag ab |
+| `vertec/peoplefone_kopplung.py` | Menüeintrag „peoplefone: Kopplungscode anzeigen“ (optional) |
+| `vertec/peoplefone_webservice.py` | Vertec-Webservice, den die Chrome-Erweiterung abfragt |
+| `chrome-extension/` | Chrome-Erweiterung für den lokalen PC |
+| `tests/` | Unit-Tests (Python + JS) und End-to-End-Test |
 
-## Wichtig vorab: Was die Lösung voraussetzt und wo die Grenzen sind
+## Voraussetzungen
 
-1. **Chrome muss im selben DaaS-Desktop laufen wie Vertec.** `vtcapp.executeurl` und `tel:`-Links öffnen sich
-   auf dem Rechner, auf dem die Vertec-App läuft – bei DaaS also im virtuellen Desktop. Läuft das Softphone
-   (wegen Headset/Audio) stattdessen im Chrome auf dem *lokalen* PC, kommt der Aufruf dort nicht an. Dann braucht
-   es entweder eine URL-Weiterleitung der DaaS-Plattform (z. B. Citrix/AVD „URL redirection“) oder eine
-   Server-Lösung (Relay). Bitte klären, wie es bei Ihnen eingerichtet ist.
-2. **Die Übergabe an das Softphone beruht nicht auf einer öffentlich dokumentierten Peoplefone-API.**
-   Das Format `{type: 'CLICK_TO_CALL', tel: …}` stammt aus dem Quellcode der *offiziellen*
-   „Peoplefone Softphone Extension“ (Chrome Web Store, Version 1.0.1.3), die damit Click-to-Call umsetzt.
-   Peoplefone kann das jederzeit ändern. Empfehlung: bei peoplefone (development@peoplefone.ch) bestätigen
-   lassen, dass diese Schnittstelle genutzt werden darf und stabil bleibt.
-3. **Gegen das echte Softphone ist die Lösung noch nicht getestet** (dazu fehlt hier ein peoplefone-Konto).
-   Getestet ist die Erweiterung in Chromium gegen ein simuliertes Softphone (siehe „Tests“). Es ist möglich,
-   dass das Softphone Click-to-Call nur annimmt, wenn zusätzlich die offizielle Peoplefone-Erweiterung
-   installiert ist → im Pilot zuerst mit, dann ohne testen.
-4. **Warum nicht die Peoplefone-REST-API?** Geprüft in der offiziellen Swagger-Dokumentation
-   (`https://api.peoplefone.com/services/api-doc/`):
-   - *Call Management API v1* kann laufende Anrufe auflisten, halten, weiterleiten – **aber keinen Anruf starten**.
-   - *Remote Call Control uaCSTA* (Beta) kann mit `POST /device/call` einen Anruf starten – **aber nur auf
-     Tischtelefonen mit uaCSTA-Unterstützung**, nicht im Browser-Softphone.
-   Für Ihr Ziel (Softphone in Chrome) passt die REST-API deshalb nicht. Falls Sie (auch) Tischtelefone nutzen,
-   wäre uaCSTA eine Alternative ohne Browser.
-5. **Vertec:** Eine dokumentierte Schnittstelle, um eine *eigene* Telefonie-Erweiterung für den Standardbefehl
-   „Anrufen“ zu schreiben, habe ich nicht gefunden. Die Lösung nutzt deshalb zwei dokumentierte Wege:
-   registrierte Python-Skripte (Menü/Kontextmenü) und das Wählen via `tel:`-URI.
+- **Vertec ab 6.8.0.17** (eigene Webservices). Ihre Version 6.8.0.21 erfüllt das.
+- Der lokale PC muss den Vertec Cloud Server über HTTPS erreichen (wie die Vertec-Apps auch).
+- Google Chrome ab Version 116 auf dem lokalen PC, peoplefone SOFTPHONE-Konto.
 
-## Installation
+## Grenzen – bitte lesen
 
-### 1. Chrome-Erweiterung installieren (im DaaS-Desktop)
+1. **Übergabe an das Softphone:** Das Format `{type: 'CLICK_TO_CALL', tel: …}` stammt aus dem Quellcode der
+   *offiziellen* „Peoplefone Softphone Extension“ (Chrome Web Store, Version 1.0.1.3). Es ist **keine öffentlich
+   dokumentierte API**; peoplefone kann es ändern. Empfehlung: bei development@peoplefone.ch bestätigen lassen.
+2. **Nicht gegen das echte Softphone und nicht in einem echten Vertec getestet.** Getestet sind die echten Skripte
+   auf einem nachgebildeten Vertec und die echte Erweiterung in Chromium gegen ein nachgebildetes Softphone.
+   Ein Pilot mit einem Arbeitsplatz ist vor dem Rollout nötig (Checkliste unten).
+3. **Verzögerung:** Normalerweise 1–3 Sekunden. Laut Vertec-Doku läuft der Webservice in einer eigenen
+   Sitzung; das Skript liest den Wert deshalb mit `setmemberoutofdate("keys")` frisch aus der Datenbank. Sollte
+   das in Ihrer Umgebung nicht greifen, kann es bis zum Notif-Intervall (Standard 10 s) dauern → im Pilot prüfen.
+4. **Nur der eigene Menüeintrag**, nicht der eingebaute Vertec-Befehl „Anrufen“: Letzterer übergibt die Nummer
+   als `tel:`-Link an Windows im RDS-Desktop – dort läuft aber nicht Ihr Chrome.
+5. **Fenster nach vorne holen:** Windows verhindert teilweise, dass sich ein Programm selbst in den Vordergrund
+   drängt. Dann blinkt Chrome in der Taskleiste; der Anruf startet trotzdem.
+6. **Last:** Jeder PC fragt Vertec alle 2 s ab (sehr kleine Anfragen). Bei vielen Benutzern das Intervall
+   erhöhen oder mit Vertec/IT abklären.
 
-Zum Testen:
-1. In Chrome `chrome://extensions` öffnen, oben rechts **Entwicklermodus** einschalten.
-2. **Entpackte Erweiterung laden** → Ordner `chrome-extension` wählen.
-3. Die Einstellungsseite öffnet sich: **Neu erzeugen** klicken (Token), **Speichern**. Token notieren.
+## Einrichtung (einmalig, durch Vertec-Administrator / IT)
 
-Für den produktiven Einsatz auf allen DaaS-Desktops sollte die IT die Erweiterung zentral verteilen
-(Chrome-Richtlinie `ExtensionInstallForcelist`, mit selbst gehostetem CRX-Paket oder als nicht gelistete
-Erweiterung im Chrome Web Store). Im Entwicklermodus geladene Erweiterungen sind dafür nicht gedacht.
+### 1. Technischen Vertec-Benutzer anlegen
 
-Zusätzlich empfohlen: die offizielle [Peoplefone Softphone Extension](https://chromewebstore.google.com/detail/peoplefone-softphone-exte/egdokdcibedkodjiodgapdplgloblkim)
-(zeigt u. a. Anruf-Benachrichtigungen; siehe Punkt 3 der Grenzen).
+Die Chrome-Erweiterung meldet sich nicht mit dem persönlichen Konto an, sondern mit einem technischen Benutzer
+(z. B. „peoplefone-dienst“) mit **möglichst wenig Rechten**:
+- Recht **Webservices ausführen** (laut Vertec standardmässig bei „Administratoren“ und „Standardbenutzer“).
+- **Lesezugriff auf Benutzer** (der Webservice liest den Wählauftrag am jeweiligen Benutzer).
+  *Welche Benutzergruppe/Rechte dafür genau nötig sind, bitte im Pilot prüfen.*
+- Auf dessen Seite **Weitere Infos** ein **API-Token** erzeugen und sicher notieren (wird nur einmal angezeigt).
 
-### 2a. Zusatzfunktion in Vertec: Menüeintrag „Mit peoplefone anrufen“ (empfohlen)
+Warum nicht das persönliche API-Token? Ein persönliches Token hätte im Browser die vollen Vertec-Rechte der
+Person. Das technische Token erlaubt nur, was der technische Benutzer darf; welche Aufträge geliefert werden,
+bestimmt zusätzlich der persönliche Kopplungscode.
 
-Benötigt Administratorrechte in Vertec.
+### 2. Webservice anlegen
 
-1. **Einstellungen > Reports & Scripts**, Rechtsklick auf **Scripts > Neu > Script**.
-2. Felder ausfüllen:
-   - **Bezeichnung:** `Mit peoplefone anrufen`
-   - **In Vertec-Menüs anzeigen:** ✔
-   - **Plattform:** Python 3
-   - **Klassen:** die Klassen, auf denen der Eintrag erscheinen soll – die Adressklassen (Personen, Firmen,
-     Kontakte) und, falls in der Auswahlliste vorhanden, die Klasse der Kommunikationsmittel.
-     *Die genauen Klassennamen bitte in der Auswahlliste bzw. im Vertec Model Browser prüfen.*
-   - **Anzeigebedingung:** `self->size = 1`
-   - **Skripttext:** Inhalt von `vertec/peoplefone_anrufen.py` einfügen.
-3. Oben im Skripttext den Konfigurationsblock anpassen:
-   - `TOKEN` = Token aus Schritt 1
-   - `CHROME_PFAD` leer lassen, wenn Chrome der Standardbrowser im DaaS-Desktop ist; sonst den Pfad zu
-     `chrome.exe` eintragen (Vertec fragt dann beim ersten Mal, ob die Datei ausgeführt werden darf).
-4. Speichern. Danach erscheint auf einer Adresse unter **Aktionen** bzw. per Rechtsklick
-   **Mit peoplefone anrufen**. Hat die Adresse mehrere Nummern, fragt das Skript, welche gewählt werden soll.
+1. **Einstellungen > Reports & Scripts > Scripts > Neu > Script**
+   - Bezeichnung: `PeoplefoneWebservice` (ohne Leer-/Sonderzeichen, ist Teil der Klassenreferenz)
+   - Plattform: Python 3, **nicht** in Menüs anzeigen
+   - Skripttext: Inhalt von `vertec/peoplefone_webservice.py`
+2. **Einstellungen > Erweiterungen > Webservices > Neu**
+   - Name (Subpath): `peoplefone`
+   - Python Klassenreferenz: `PeoplefoneWebservice.PeoplefoneDial`
+   - Aktiv: ✔ (für die Einrichtung zusätzlich „Requests tracken“ ✔, danach wieder aus)
 
-Hinweis: Das Token steht im Skripttext und ist für Vertec-Administratoren sichtbar. Es schützt davor,
-dass *fremde Webseiten* Anrufe auslösen – nicht vor Personen mit Zugriff auf Vertec.
+### 3. Menüeinträge anlegen
 
-### 2b. Optional: eingebauten Vertec-Befehl „Anrufen“ umleiten (Windows-tel:-Handler)
+**Einstellungen > Reports & Scripts > Scripts > Neu > Script**, je einmal für:
 
-Vertec übergibt bei **Rechtsklick auf Nummer > Anrufen** die Nummer als `tel:+41…` an Windows
-(Systemeinstellung **Telefonie > Wählen via URI unterstützen**, Standard: Ja). Diesen Link kann man auf
-die Chrome-Erweiterung umleiten:
-
-1. Ordner `windows` an einen festen Ort im DaaS-Profil kopieren, z. B. `%LOCALAPPDATA%\VertecPeoplefone`.
-2. `config.example.json` → `config.json` kopieren und `Token` eintragen (gleicher Token wie in Schritt 1).
-3. PowerShell im Ordner öffnen: `powershell -ExecutionPolicy Bypass -File .\Install-TelHandler.ps1`
-4. In den Windows-Einstellungen **Standard-Apps** für den Linktyp **TEL** die App **Vertec → peoplefone**
-   wählen (Windows lässt Programme diese Wahl nicht selbst treffen).
-
-Einschränkungen: Beim Wählen blitzt kurz ein PowerShell-Fenster auf. In verwalteten DaaS-Umgebungen
-können Gruppenrichtlinien die Wahl der Standard-App oder PowerShell-Skripte sperren – dann die IT
-einbeziehen oder nur Weg 2a verwenden. Entfernen: `Uninstall-TelHandler.ps1`.
-
-## Einstellungen der Chrome-Erweiterung
-
-| Einstellung | Standard | Bedeutung |
+| | „Mit peoplefone anrufen“ | „peoplefone: Kopplungscode anzeigen“ |
 |---|---|---|
-| Token | – | Muss mit Vertec-Skript / `config.json` übereinstimmen; ohne gültigen Token wird nie gewählt |
-| Landesvorwahl | `41` | Für nationale Nummern (`031…` → `+4131…`) |
-| Wartezeit | `4000` ms | Pause nach dem Öffnen des Softphones, bis es angemeldet ist |
-| Vor dem Wählen nachfragen | aus | Bestätigungsdialog im Softphone-Tab |
-| Gesperrte Präfixe | `+41900`, `+41901`, `+41906` | Mehrwertnummern werden nicht gewählt |
+| Skripttext | `vertec/peoplefone_anrufen.py` | `vertec/peoplefone_kopplung.py` |
+| In Vertec-Menüs anzeigen | ✔ | ✔ |
+| Plattform | Python 3 | Python 3 |
+| Klassen | Adressklassen (Personen, Firmen, Kontakte) und ggf. Kommunikationsmittel – *genaue Namen in der Auswahlliste / im Model Browser prüfen* | gleich |
+| Anzeigebedingung | `self->size = 1` | `self->size = 1` |
+| Erweiterte Berechtigungen | ✔ (siehe unten) | ✔ |
+
+*Erweiterte Berechtigungen:* Die Skripte speichern einen Wert am **eigenen** Benutzereintrag. Dürfen Benutzer
+das nicht, schreiben die Skripte – und nur diese eine Zeile – im `SystemContext`. Dialoge werden dabei gemäss
+Vertec-Vorgabe nie im SystemContext angezeigt. Dürfen Ihre Benutzer ihren eigenen Eintrag ohnehin ändern,
+kann die Option aus bleiben.
+
+### 4. Chrome-Erweiterung verteilen (lokale PCs)
+
+- Zum Testen: `chrome://extensions` → **Entwicklermodus** → **Entpackte Erweiterung laden** → Ordner
+  `chrome-extension`.
+- Produktiv: zentral durch die IT verteilen (Chrome-Richtlinie `ExtensionInstallForcelist`, mit selbst
+  gehostetem Paket oder als nicht gelistete Erweiterung im Chrome Web Store).
+- Empfohlen zusätzlich: offizielle [Peoplefone Softphone Extension](https://chromewebstore.google.com/detail/peoplefone-softphone-exte/egdokdcibedkodjiodgapdplgloblkim).
+
+## Einrichtung pro Benutzer (ca. 1 Minute)
+
+1. In Vertec auf einer Adresse **Mit peoplefone anrufen** wählen. Beim ersten Mal erscheint der persönliche
+   **Kopplungscode** (Format `12345-…`) – kopieren.
+2. In Chrome auf das Symbol der Erweiterung klicken → Einstellungen:
+   - **Vertec-Adresse** (z. B. `https://firma.vertec-cloud.ch`), **API-Token** (technischer Benutzer, von der IT),
+     **Kopplungscode** einfügen.
+   - **Speichern und Verbindung testen** → Chrome fragt einmal nach dem Zugriff auf die Vertec-Adresse → erlauben.
+3. Fertig. Ab jetzt wählt „Mit peoplefone anrufen“ direkt.
+
+Das Erweiterungssymbol zeigt den Zustand: ohne Zeichen = verbunden, **?** = nicht eingerichtet,
+**!** = Fehler (Mauszeiger auf das Symbol zeigt den Grund, z. B. „Kopplungscode ungültig“).
+
+Neuer PC oder Code verloren: „peoplefone: Kopplungscode anzeigen“. Dort kann auch ein neuer Code erzeugt
+werden (der alte wird dann ungültig).
+
+## Pilot-Checkliste
+
+1. Softphone geschlossen → „Mit peoplefone anrufen“ → Softphone öffnet sich auf dem lokalen PC und wählt?
+2. Softphone offen → erneut → kein zweiter Tab, Anruf startet? Wie lange dauert es (Ziel: < 3 s)?
+3. Chrome-Fenster minimiert / anderes Programm im Vordergrund → kommt Chrome nach vorne?
+4. Abgemeldet → Login → wird nach dem Login gewählt (bis 3 Minuten)?
+5. Benutzer ohne Admin-Rechte → funktionieren Kopplung und Anruf?
+6. Falls nichts passiert: Symbol zeigt „!“? Im Webservice-Eintrag „Requests tracken“ aktivieren und Log
+   ansehen; Wartezeit erhöhen; offizielle Peoplefone-Erweiterung zusätzlich installieren.
+
+## Sicherheit und Datenschutz
+
+- Daten bleiben in Vertec und auf dem lokalen PC; kein zusätzlicher Dienst.
+- Am Benutzer gespeichert: Kopplungscode und **der zuletzt gewählte Auftrag** (ID, Zeit, Nummer). Aufträge
+  älter als 30 Sekunden werden nicht mehr ausgeliefert.
+- API-Token und Kopplungscode liegen in Chrome lokal (`chrome.storage.local`, nicht mit dem Google-Konto
+  synchronisiert). Wer an einem entsperrten PC Zugriff auf Chrome hat, kann sie auslesen.
+- Mehrwertnummern (0900/0901/0906) werden standardmässig nicht gewählt.
 
 ## Tests
 
 ```bash
-node --test tests/*.test.mjs                 # Nummern-Normalisierung, URL-Format (JS)
-python3 -m unittest discover -s tests        # Vertec-Skript mit simuliertem vtcapp
-node tests/e2e_extension.cjs                 # Erweiterung in Chromium gegen simuliertes Softphone (Playwright)
+python3 -m unittest discover -s tests        # Vertec-Skripte und Webservice (simuliertes vtcapp/vtcweb)
+node --test tests/*.test.mjs                 # Nummern-Normalisierung, Vertec-Client (JS)
+node tests/e2e_extension.cjs                 # Ende-zu-Ende in Chromium (Playwright, openssl, python3)
 ```
 
-Der End-to-End-Test prüft: Softphone nicht offen → Tab öffnet und wählt (Token verschwindet aus der URL);
-Softphone offen → zusätzlicher Tab wird geschlossen und der bestehende Tab wählt; falscher Token und
-0900-Nummer → kein Anruf.
-
-**Pilot-Test mit dem echten Softphone (bitte vor dem Rollout):**
-1. Softphone in Chrome geschlossen → in Vertec „Mit peoplefone anrufen“ → Softphone öffnet sich, wählt?
-2. Softphone offen → erneut → kein zweiter Tab, Anruf startet?
-3. Abgemeldet → Login → wird nach dem Login gewählt (innerhalb von 3 Minuten)?
-4. Falls nichts passiert: Wartezeit erhöhen; offizielle Peoplefone-Erweiterung zusätzlich installieren.
-
-## Datenschutz / Sicherheit
-
-- Die Nummer wird im URL-*Fragment* (`#…`) übergeben; Fragmente werden von Browsern nicht an Server
-  gesendet. Die Erweiterung entfernt Nummer und Token sofort aus der Adresszeile; im Chrome-Verlauf kann der
-  ursprüngliche Aufruf aber erscheinen.
-- An peoplefone gelangt die Nummer erst beim Wählen – wie bei jedem Anruf über das Softphone.
-- Die Erweiterung hat nur Zugriff auf die peoplefone-Softphone-Domains und braucht keine weiteren Server.
+Der End-to-End-Test führt die echten Vertec-Skripte auf einem nachgebildeten Vertec aus und die echte
+Erweiterung in Chromium gegen ein nachgebildetes Softphone: Verbindung ok; Softphone nicht offen → öffnet und
+wählt; Softphone offen → gleicher Tab, keine Doppelwahl; 0900 → nicht gewählt; falscher Kopplungscode → Fehler
+am Symbol, nicht gewählt.
 
 ## Quellen
 
-- Vertec: [Telefonie-Anbindung](https://www.vertec.com/en-ch/kb/telefonieanbindung/),
-  [Systemeinstellungen Telefonie](https://www.vertec.com/en-ch/kb/sektiontelefonie/),
-  [Python-Funktionen (executeurl, executefile, msgbox, inputbox)](https://www.vertec.com/en-ch/kb/python-functions/),
+- Vertec: [Custom web services](https://www.vertec.com/en-ch/kb/custom-webservices/),
+  [Modul vtcweb](https://www.vertec.com/en-ch/kb/vertec-python-module-vtcweb/),
+  [API-Token](https://www.vertec.com/en-ch/kb/api-token/),
+  [Keys](https://www.vertec.com/en-ch/kb/key-values/),
+  [Python-Funktionen](https://www.vertec.com/en-ch/kb/python-functions/),
+  [Erweiterte Berechtigungen](https://www.vertec.com/de-ch/kb/erweiterte-berechtigungen/),
+  [msgbox/inputbox](https://www.vertec.com/de-ch/kb/msgbox/),
   [Skripte registrieren](https://www.vertec.com/en-ch/kb/script-registration/),
-  [Kommunikationsmittel](https://www.vertec.com/en-ch/kb/kommmittel),
-  [TAPI (nur On-Premises/Desktop-App)](https://www.vertec.com/en-ch/kb/tapi-extension/)
+  [Notif](https://www.vertec.com/en-ch/kb/notif/),
+  [Kommunikationsmittel](https://www.vertec.com/en-ch/kb/kommmittel)
 - peoplefone: [API-Dokumentation (Swagger)](https://api.peoplefone.com/services/api-doc/),
-  [SOFTPHONE (Web-App in Chrome)](https://support.peoplefone.com/en/peoplefone-softphone/),
+  [SOFTPHONE](https://support.peoplefone.com/en/peoplefone-softphone/),
   [Peoplefone Softphone Extension](https://chromewebstore.google.com/detail/peoplefone-softphone-exte/egdokdcibedkodjiodgapdplgloblkim)

@@ -28,12 +28,6 @@
     return false;
   });
 
-  // Fallback: falls der Service Worker die Navigation verpasst hat
-  // (z.B. Chrome wurde gerade erst durch den Aufruf gestartet).
-  if (window.location.hash.indexOf('vertec-dial=') >= 0) {
-    send({ type: 'VP_URL', url: window.location.href });
-  }
-
   // Softphone ist geladen -> evtl. wartenden Wählauftrag abholen.
   send({ type: 'VP_READY' });
 

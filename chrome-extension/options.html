@@ -4,41 +4,59 @@
   <meta charset="utf-8">
   <title>Vertec → peoplefone Wählhilfe – Einstellungen</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    body { font-family: system-ui, sans-serif; max-width: 660px; margin: 2rem auto; padding: 0 1rem; color: #222; }
     h1 { font-size: 1.3rem; }
+    h2 { font-size: 1.05rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .3rem; }
     label { display: block; margin-top: 1.1rem; font-weight: 600; }
     small { display: block; color: #555; font-weight: normal; margin-top: .2rem; }
-    input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: .45rem; font: inherit; }
+    input[type=text], input[type=password], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: .45rem; font: inherit; }
     textarea { height: 4.5rem; }
-    .row { display: flex; gap: .5rem; }
-    .row input { flex: 1; }
-    button { margin-top: 1.4rem; padding: .5rem 1.2rem; font: inherit; cursor: pointer; }
-    #status { margin-left: 1rem; color: #0a7a2f; }
+    button { margin-top: 1.4rem; margin-right: .5rem; padding: .5rem 1.2rem; font: inherit; cursor: pointer; }
+    #status { display: block; margin-top: 1rem; white-space: pre-wrap; }
+    .ok { color: #0a7a2f; } .err { color: #b00020; }
     code { background: #f2f2f2; padding: 0 .25rem; }
   </style>
 </head>
 <body>
   <h1>Vertec → peoplefone Wählhilfe</h1>
 
-  <label for="token">Geheimer Token
-    <small>Muss identisch sein mit <code>TOKEN</code> im Vertec-Skript bzw. <code>Token</code> in der
-      Windows-Konfiguration. Verhindert, dass fremde Webseiten über präparierte Links Anrufe auslösen.</small>
-  </label>
-  <div class="row">
-    <input id="token" type="text" autocomplete="off" spellcheck="false">
-    <button id="gen" type="button" style="margin-top:0">Neu erzeugen</button>
-  </div>
+  <h2>Verbindung zu Vertec</h2>
 
-  <label for="countryCode">Landesvorwahl (ohne 00 / +)
-    <small>Für nationale Nummern wie 031 123 45 67 → +41 31 123 45 67.</small>
+  <label for="vertecUrl">Vertec-Adresse
+    <small>Die Adresse Ihres Vertec Cloud Servers, z.B. <code>https://firma.vertec-cloud.ch</code> (von der IT).</small>
   </label>
+  <input id="vertecUrl" type="text" spellcheck="false" placeholder="https://…">
+
+  <label for="webserviceName">Name des Webservice
+    <small>„Name (Subpath)“ des Webservice in Vertec. Standard: <code>peoplefone</code></small>
+  </label>
+  <input id="webserviceName" type="text" spellcheck="false">
+
+  <label for="apiToken">API-Token
+    <small>API-Token des technischen Vertec-Benutzers für die Wählhilfe (von der IT).</small>
+  </label>
+  <input id="apiToken" type="password" autocomplete="off" spellcheck="false">
+
+  <label for="pairingCode">Persönlicher Kopplungscode
+    <small>Wird in Vertec beim ersten „Mit peoplefone anrufen“ angezeigt
+      (oder über „peoplefone: Kopplungscode anzeigen“).</small>
+  </label>
+  <input id="pairingCode" type="password" autocomplete="off" spellcheck="false">
+
+  <h2>Wählen</h2>
+
+  <label for="countryCode">Landesvorwahl (ohne 00 / +)</label>
   <input id="countryCode" type="text">
 
   <label for="delayMs">Wartezeit nach dem Öffnen des Softphones (Millisekunden)
-    <small>Nur relevant, wenn das Softphone noch nicht offen war. Das Softphone braucht nach dem Laden
-      einen Moment, bis es angemeldet ist. Bei Bedarf erhöhen.</small>
+    <small>Nur relevant, wenn das Softphone noch nicht offen war. Bei Bedarf erhöhen.</small>
   </label>
   <input id="delayMs" type="number" min="0" step="500">
+
+  <label for="pollMs">Abfrageintervall (Millisekunden)
+    <small>Wie oft bei Vertec nach neuen Wählaufträgen gefragt wird. Standard 2000.</small>
+  </label>
+  <input id="pollMs" type="number" min="1000" step="500">
 
   <label><input id="confirmBeforeDial" type="checkbox"> Vor dem Wählen nachfragen</label>
 
@@ -50,7 +68,8 @@
   </label>
   <input id="softphoneUrl" type="text" spellcheck="false">
 
-  <button id="save" type="button">Speichern</button><span id="status"></span>
+  <button id="save" type="button">Speichern und Verbindung testen</button>
+  <span id="status"></span>
 
   <script type="module" src="options.js"></script>
 </body>

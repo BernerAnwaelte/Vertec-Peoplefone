@@ -1,4 +1,3 @@
-windows/config.json
 node_modules/
 __pycache__/
 *.pyc
